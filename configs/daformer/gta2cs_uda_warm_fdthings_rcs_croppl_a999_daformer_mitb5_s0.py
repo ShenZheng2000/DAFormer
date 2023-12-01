@@ -46,8 +46,17 @@ optimizer = dict(
 n_gpus = 1
 runner = dict(type='IterBasedRunner', max_iters=40000)
 # Logging Configuration
-checkpoint_config = dict(by_epoch=False, interval=40000, max_keep_ckpts=1)
+# checkpoint_config = dict(by_epoch=False, interval=40000, max_keep_ckpts=1)
+checkpoint_config = dict(by_epoch=False, interval=4000, max_keep_ckpts=10)
 evaluation = dict(interval=4000, metric='mIoU')
+
+# NOTE: Add the custom hook for the best checkpoint based on mIoU
+from mmcv.runner import HOOKS
+from mmcv.runner.hooks.checkpoint import BestCheckpointHook
+custom_hooks = [
+    dict(type='BestCheckpointHook', metric='mIoU', rule='max', by_epoch=False)
+]
+
 # Meta Information for Result Analysis
 name = 'gta2cs_uda_warm_fdthings_rcs_croppl_a999_daformer_mitb5_s0'
 exp = 'basic'

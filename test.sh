@@ -5,9 +5,11 @@
 
 #!/bin/bash
 
+# NOTE: change latest.pth to best (or other) checkpoint if needed
+
 TEST_ROOT=$1
 CONFIG_FILE="${TEST_ROOT}/*${TEST_ROOT: -1}.json"
-CHECKPOINT_FILE="${TEST_ROOT}/latest.pth"
+CHECKPOINT_FILE="${TEST_ROOT}/best_mIoU_iter_*.pth"
 SHOW_DIR="${TEST_ROOT}/preds/"
 echo 'Config File:' $CONFIG_FILE
 echo 'Checkpoint File:' $CHECKPOINT_FILE

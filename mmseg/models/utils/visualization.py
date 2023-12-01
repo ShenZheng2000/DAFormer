@@ -5,6 +5,8 @@ import torch
 from matplotlib import pyplot as plt
 from PIL import Image
 
+from mmseg.models.utils.dacs_transforms import denorm
+
 Cityscapes_palette = [
     128, 64, 128, 244, 35, 232, 70, 70, 70, 102, 102, 156, 190, 153, 153, 153,
     153, 153, 250, 170, 30, 220, 220, 0, 107, 142, 35, 152, 251, 152, 70, 130,
@@ -73,6 +75,46 @@ def _colorize(img, cmap, mask_zero=False):
     if mask_zero:
         colored_image[mask, :] = [1, 1, 1]
     return colored_image
+
+def get_segmentation_error_vis(seg, gt):
+    error_mask = seg != gt
+    error_mask[gt == 255] = 0
+    out = seg.copy()
+    out[error_mask == 0] = 255
+    return out
+
+
+def is_integer_array(a):
+    return np.all(np.equal(np.mod(a, 1), 0))
+
+
+def prepare_debug_out(title, out, mean, std):
+    if len(out.shape) == 4 and out.shape[0] == 1:
+        out = out[0]
+    if len(out.shape) == 2:
+        out = np.expand_dims(out, 0)
+    assert len(out.shape) == 3
+    if out.shape[0] == 3:
+        if mean is not None:
+            out = torch.clamp(denorm(out, mean, std), 0, 1)[0]
+        out = dict(title=title, img=out)
+    elif out.shape[0] > 3:
+        out = torch.softmax(torch.from_numpy(out), dim=0).numpy()
+        out = np.argmax(out, axis=0)
+        out = dict(title=title, img=out, cmap='cityscapes')
+    elif out.shape[0] == 1:
+        if is_integer_array(out) and np.max(out) > 1:
+            out = dict(title=title, img=out[0], cmap='cityscapes')
+        elif np.min(out) >= 0 and np.max(out) <= 1:
+            out = dict(title=title, img=out[0], cmap='viridis', vmin=0, vmax=1)
+        else:
+            out = dict(
+                title=title, img=out[0], cmap='viridis', range_in_title=True)
+    else:
+        raise NotImplementedError(out.shape)
+    return out
+
+
 
 
 def subplotimg(ax,

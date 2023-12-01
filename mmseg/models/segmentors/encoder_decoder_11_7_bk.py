@@ -11,7 +11,75 @@ from .. import builder
 from ..builder import SEGMENTORS
 from .base import BaseSegmentor
 
-from ...transforms.fovea import build_grid_net, before_train_json, process_mmseg, read_seg_to_det
+from ...transforms.fovea import process_and_update_features, build_grid_net, before_train_json, process_mmseg, read_seg_to_det
+import os, json, sys
+from torchvision.utils import save_image
+
+from mmcv import imrescale
+
+# NOTE: vp is here: "/home/aghosh/Projects/2PCNet/Datasets/VP/cityscapes_all_vp.json"
+
+# from sklearn.manifold import TSNE
+from MulticoreTSNE import MulticoreTSNE as TSNE
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Cityscapes classes and palette
+def cityscapes_classes():
+    return [
+        # 'road', 'sidewalk', 'building', 'wall', 'fence', 'pole',
+        'traffic light', 'traffic sign', 
+        # 'vegetation', 'terrain', 'sky',
+        'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle', 'bicycle'
+    ]
+
+def cityscapes_palette():
+    return [
+            # [128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156], [190, 153, 153], [153, 153, 153],
+             [250, 170, 30], [220, 220, 0],
+            # [107, 142, 35], [152, 251, 152], [70, 130, 180], 
+            [220, 20, 60], [255, 0, 0], [0, 0, 142], [0, 0, 70], [0, 60, 100], [0, 80, 100], [0, 0, 230], [119, 11, 32]
+            ]
+
+def tsne_visualization(x, save_path='tsne.png'):
+    """
+    Performs t-SNE visualization on the deep features.
+
+    Parameters:
+    - x: Deep features from the model.
+
+    Returns:
+    - A matplotlib plot showing the t-SNE visualization.
+    """
+    # Ensure x is on CPU and detached from the computation graph
+    x = x.cpu().detach()
+
+    # Reshape for t-SNE: Treat each spatial location as a sample
+    features_2d = x.view(-1, x.shape[1]).numpy()  # New reshape to treat each spatial location as a sample
+    print('features_2d shape:', features_2d.shape)
+
+    # Compute t-SNE embedding
+    tsne = TSNE(n_iter=300, n_jobs=8)
+    tsne_results = tsne.fit_transform(features_2d)
+
+    # Plot t-SNE results with Cityscapes color palette
+    palette = np.array(cityscapes_palette()) / 255.0  # Normalize colors to [0, 1]
+    classes = cityscapes_classes()
+
+    for i, color in enumerate(palette):
+        indices = np.where(np.argmax(features_2d, axis=1) == i)
+        # print("indices is", indices)
+        plt.scatter(tsne_results[indices, 0], tsne_results[indices, 1], color=color, label=classes[i],
+                    s=1,) # NOTE: make smaller size here
+
+    plt.title("t-SNE Visualization of Deep Features")
+    plt.xlabel("Dimension 1")
+    plt.ylabel("Dimension 2")
+    plt.legend(loc='best', fontsize='small')
+    plt.savefig(save_path)
+
+    print("t-SNE visualization saved to", save_path)
+
 
 @SEGMENTORS.register_module()
 class EncoderDecoder(BaseSegmentor):
@@ -46,11 +114,7 @@ class EncoderDecoder(BaseSegmentor):
                  warp_scale=1.0,
                  warp_dataset=[],
                  SEG_TO_DET=None,
-                 keep_grid=False,
-                 is_seg=True,
-                 bandwidth_scale=64,
-                 amplitude_scale=1.0,
-                 ):
+                 is_seg=True):
         super(EncoderDecoder, self).__init__(init_cfg)
         if pretrained is not None:
             assert backbone.get('pretrained') is None, \
@@ -79,7 +143,11 @@ class EncoderDecoder(BaseSegmentor):
         self.warp_dataset = warp_dataset
         self.warp_fovea_center = warp_fovea_center
         self.is_seg = is_seg
-        self.keep_grid = keep_grid
+
+        # print("VANISHING_POINT: ", VANISHING_POINT)
+        # print("self.warp_aug_lzu: ", self.warp_aug_lzu)
+        # print("self.warp_fovea: ", self.warp_fovea)
+        # print("self.warp_fovea_inst: ", self.warp_fovea_inst)
 
         self.seg_to_det = read_seg_to_det(SEG_TO_DET)
 
@@ -93,9 +161,9 @@ class EncoderDecoder(BaseSegmentor):
                                         warp_fovea_center=warp_fovea_center,
                                         warp_fovea_inst_scale=warp_fovea_inst_scale,
                                         warp_fovea_inst_scale_l2=warp_fovea_inst_scale_l2,
-                                        is_seg=is_seg,
-                                        bandwidth_scale=bandwidth_scale,
-                                        amplitude_scale=amplitude_scale,)
+                                        is_seg=is_seg)
+
+        # print("the grid net is", self.grid_net)
 
     def _init_decode_head(self, decode_head):
         """Initialize ``decode_head``"""
@@ -115,52 +183,78 @@ class EncoderDecoder(BaseSegmentor):
 
     def extract_feat(self, img, img_metas=None, is_training=True):
         """Extract features from images."""
+        # print("====================================>")
+        # print("img.shape: ", img.shape) # [bs, c, h, w]
 
-        # TODO: check later if img_metas is updated in-place
-        # using warping image visualization, and print-outs
+        # print("EF img_metas: ", img_metas)
+            # for cs
+                # img_metas:  [{'filename': '/home/aghosh/Projects/2PCNet/Datasets/cityscapes/leftImg8bit/train/bremen/bremen_000192_000019_leftImg8bit.png', 
+                # 'ori_filename': 'bremen/bremen_000192_000019_leftImg8bit.png', 
+                # 'ori_shape': (1024, 2048, 3), 'img_shape': (512, 1024, 3), 
+                # 'pad_shape': (512, 1024, 3), 
+                # 'scale_factor': array([0.5, 0.5, 0.5, 0.5], dtype=float32), 
+                # 'flip': False, 
+                # 'flip_direction': 'horizontal', 
+                # 'img_norm_cfg': {'mean': array([123.675, 116.28 , 103.53 ], dtype=float32), 
+                # 'std': array([58.395, 57.12 , 57.375], dtype=float32), 'to_rgb': True}}, 
+                # {'filename': '/home/aghosh/Projects/2PCNet/Datasets/cityscapes/leftImg8bit/train/jena/jena_000105_000019_leftImg8bit.png', 
+                # 'ori_filename': 'jena/jena_000105_000019_leftImg8bit.png', 
+                # 'ori_shape': (1024, 2048, 3), 
+                # 'img_shape': (512, 1024, 3), 'pad_shape': (512, 1024, 3), 
+                # 'scale_factor': array([0.5, 0.5, 0.5, 0.5], dtype=float32), 
+                # 'flip': True, 'flip_direction': 'horizontal', 
+                # 'img_norm_cfg': {'mean': array([123.675, 116.28 , 103.53 ], dtype=float32), 
+                # 'std': array([58.395, 57.12 , 57.375], dtype=float32), 
+                # 'to_rgb': True}}]
+
 
         if (self.warp_aug_lzu is True) and (img_metas is not None):
             # print("self.warp_dataset is", self.warp_dataset)
             if any(src in img_metas[0]['filename'] for src in self.warp_dataset) and (is_training is True):
                 # print(f"YES, RUNNING warping on {img_metas[0]['filename']}")
                 x, img, img_metas = process_mmseg(img_metas,
-                                                    img,
-                                                    self.warp_aug_lzu,
-                                                    self.vanishing_point,
-                                                    self.grid_net,
-                                                    self.backbone,
-                                                    self.warp_debug,
-                                                    seg_to_det=self.seg_to_det,
-                                                    keep_grid=self.keep_grid
-                                                )
+                                            img,
+                                            self.warp_aug_lzu,
+                                            self.vanishing_point,
+                                            self.grid_net,
+                                            self.backbone,
+                                            self.warp_debug,
+                                            seg_to_det=self.seg_to_det)
                 # print("images.shape", images.shape)
             else:
                 x = self.backbone(img)
         else:
             x = self.backbone(img)
 
+        # x = self.backbone(img)
+
+        # for i, element in enumerate(x):
+        #     print(f"x[{i}].shape: {element.shape}")
+                # img.shape:  torch.Size([2, 3, 512, 1024])
+                # x[0].shape: torch.Size([2, 64, 128, 256])
+                # x[1].shape: torch.Size([2, 128, 64, 128])
+                # x[2].shape: torch.Size([2, 320, 32, 64])
+                # x[3].shape: torch.Size([2, 512, 16, 32]) 
+
+        # sys.exit()
+
         if self.with_neck:
             x = self.neck(x)
 
-        # return x, img, img_metas
-        return x
+        return x, img, img_metas
 
-    def encode_decode(self, img, img_metas, 
-                      is_training=True
-                      ):
+    def encode_decode(self, img, img_metas, is_training=True):
         """Encode images with backbone and decode into a semantic segmentation
         map of the same size as input."""
         # print("Before; encode_decode img.shape", img.shape)
-        # x, img, img_metas = self.extract_feat(img, img_metas, 
-        #                                       is_training
-        #                                       )
-        x = self.extract_feat(img, img_metas, 
-                                is_training
-                                )
+        x, img, img_metas = self.extract_feat(img, img_metas, is_training)
         # print("After; encode_decode img.shape", img.shape)
         out = self._decode_head_forward_test(x, img_metas)
         
         # print("out shape", out.shape) # [1, 19, 128, 128]
+        # NOTE: this is for tsne only, comment out later
+        # print("start tsne visualization")
+        # tsne_visualization(out, save_path='tsne/95.png'); exit()
 
         out = resize(
             input=out,
@@ -224,8 +318,7 @@ class EncoderDecoder(BaseSegmentor):
                       gt_semantic_seg,
                       seg_weight=None,
                       return_feat=False,
-                      is_training=True
-                      ):
+                      is_training=True):
         """Forward function for training.
 
         Args:
@@ -241,12 +334,26 @@ class EncoderDecoder(BaseSegmentor):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
-        # x, img, img_metas = self.extract_feat(img, img_metas, 
-        #                                       is_training
-        #                                       )
-        x = self.extract_feat(img, img_metas, 
-                            is_training
-                            )
+        x, img, img_metas = self.extract_feat(img, img_metas, is_training)
+        # print("x[0] shape", x[0].shape); print("len(x) is", len(x))
+        # print("gt_semantic_seg shape", gt_semantic_seg.shape) # [bs, 1, h, w]
+        # print("img_metas", img_metas)
+
+        # NOTE: scale the gt_semantic_seg
+        if self.warp_scale != 1.0:
+            # You might need to adjust the sizes to your specific needs
+            # The size should be provided as (h, w)
+            h, w = gt_semantic_seg.shape[2], gt_semantic_seg.shape[3]
+            new_h, new_w = int(h * self.warp_scale), int(w * self.warp_scale)
+            
+            # Rescale using the interpolate function
+            # mode 'nearest' is typically used for segmentation maps to prevent mixing class labels
+            gt_semantic_seg = F.interpolate(gt_semantic_seg.float(),  # Cast to float for interpolate
+                                            size=(new_h, new_w), 
+                                            mode='nearest').type(torch.int64)  # Cast back to int64 after interpolation
+        
+        # print("=====================================>")
+        # print("gt_semantic_seg shape", gt_semantic_seg.shape) # [bs, 1, h, w]
 
         losses = dict()
         if return_feat:
@@ -310,14 +417,15 @@ class EncoderDecoder(BaseSegmentor):
                 warning=False)
         return preds
 
-    def whole_inference(self, img, img_meta, rescale, 
-                        is_training=False
-                        ):
+    def whole_inference(self, img, img_meta, rescale, is_training=False):
         """Inference with full image."""
 
-        seg_logit = self.encode_decode(img, img_meta, 
-                                       is_training
-                                       )
+        seg_logit = self.encode_decode(img, img_meta, is_training)
+        # print("getting seg_logit shape", seg_logit.shape); # [1, num_classes, h, w]
+
+        # NOTE: this is too slow!
+        # print("start tsne visualization")
+        # tsne_visualization(seg_logit, save_path='tsne.png'); exit()
 
         if rescale:
             # support dynamic shape for onnx

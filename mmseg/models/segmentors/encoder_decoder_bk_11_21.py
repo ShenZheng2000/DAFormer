@@ -11,7 +11,7 @@ from .. import builder
 from ..builder import SEGMENTORS
 from .base import BaseSegmentor
 
-from ...transforms.fovea import build_grid_net, before_train_json, process_mmseg, read_seg_to_det
+from ...transforms.fovea import process_and_update_features, build_grid_net, before_train_json, process_mmseg, read_seg_to_det
 
 @SEGMENTORS.register_module()
 class EncoderDecoder(BaseSegmentor):
@@ -81,6 +81,11 @@ class EncoderDecoder(BaseSegmentor):
         self.is_seg = is_seg
         self.keep_grid = keep_grid
 
+        # print("VANISHING_POINT: ", VANISHING_POINT)
+        # print("self.warp_aug_lzu: ", self.warp_aug_lzu)
+        # print("self.warp_fovea: ", self.warp_fovea)
+        # print("self.warp_fovea_inst: ", self.warp_fovea_inst)
+
         self.seg_to_det = read_seg_to_det(SEG_TO_DET)
 
         self.vanishing_point = before_train_json(VP=VANISHING_POINT)
@@ -96,6 +101,8 @@ class EncoderDecoder(BaseSegmentor):
                                         is_seg=is_seg,
                                         bandwidth_scale=bandwidth_scale,
                                         amplitude_scale=amplitude_scale,)
+
+        # print("the grid net is", self.grid_net)
 
     def _init_decode_head(self, decode_head):
         """Initialize ``decode_head``"""
@@ -115,9 +122,30 @@ class EncoderDecoder(BaseSegmentor):
 
     def extract_feat(self, img, img_metas=None, is_training=True):
         """Extract features from images."""
+        # print("====================================>")
+        # print("img.shape: ", img.shape) # [bs, c, h, w]
 
-        # TODO: check later if img_metas is updated in-place
-        # using warping image visualization, and print-outs
+        # print("EF img_metas: ", img_metas)
+            # for cs
+                # img_metas:  [{'filename': '/home/aghosh/Projects/2PCNet/Datasets/cityscapes/leftImg8bit/train/bremen/bremen_000192_000019_leftImg8bit.png', 
+                # 'ori_filename': 'bremen/bremen_000192_000019_leftImg8bit.png', 
+                # 'ori_shape': (1024, 2048, 3), 'img_shape': (512, 1024, 3), 
+                # 'pad_shape': (512, 1024, 3), 
+                # 'scale_factor': array([0.5, 0.5, 0.5, 0.5], dtype=float32), 
+                # 'flip': False, 
+                # 'flip_direction': 'horizontal', 
+                # 'img_norm_cfg': {'mean': array([123.675, 116.28 , 103.53 ], dtype=float32), 
+                # 'std': array([58.395, 57.12 , 57.375], dtype=float32), 'to_rgb': True}}, 
+                # {'filename': '/home/aghosh/Projects/2PCNet/Datasets/cityscapes/leftImg8bit/train/jena/jena_000105_000019_leftImg8bit.png', 
+                # 'ori_filename': 'jena/jena_000105_000019_leftImg8bit.png', 
+                # 'ori_shape': (1024, 2048, 3), 
+                # 'img_shape': (512, 1024, 3), 'pad_shape': (512, 1024, 3), 
+                # 'scale_factor': array([0.5, 0.5, 0.5, 0.5], dtype=float32), 
+                # 'flip': True, 'flip_direction': 'horizontal', 
+                # 'img_norm_cfg': {'mean': array([123.675, 116.28 , 103.53 ], dtype=float32), 
+                # 'std': array([58.395, 57.12 , 57.375], dtype=float32), 
+                # 'to_rgb': True}}]
+
 
         if (self.warp_aug_lzu is True) and (img_metas is not None):
             # print("self.warp_dataset is", self.warp_dataset)
@@ -139,24 +167,28 @@ class EncoderDecoder(BaseSegmentor):
         else:
             x = self.backbone(img)
 
+        # x = self.backbone(img)
+
+        # for i, element in enumerate(x):
+        #     print(f"x[{i}].shape: {element.shape}")
+                # img.shape:  torch.Size([2, 3, 512, 1024])
+                # x[0].shape: torch.Size([2, 64, 128, 256])
+                # x[1].shape: torch.Size([2, 128, 64, 128])
+                # x[2].shape: torch.Size([2, 320, 32, 64])
+                # x[3].shape: torch.Size([2, 512, 16, 32]) 
+
+        # sys.exit()
+
         if self.with_neck:
             x = self.neck(x)
 
-        # return x, img, img_metas
-        return x
+        return x, img, img_metas
 
-    def encode_decode(self, img, img_metas, 
-                      is_training=True
-                      ):
+    def encode_decode(self, img, img_metas, is_training=True):
         """Encode images with backbone and decode into a semantic segmentation
         map of the same size as input."""
         # print("Before; encode_decode img.shape", img.shape)
-        # x, img, img_metas = self.extract_feat(img, img_metas, 
-        #                                       is_training
-        #                                       )
-        x = self.extract_feat(img, img_metas, 
-                                is_training
-                                )
+        x, img, img_metas = self.extract_feat(img, img_metas, is_training)
         # print("After; encode_decode img.shape", img.shape)
         out = self._decode_head_forward_test(x, img_metas)
         
@@ -224,8 +256,7 @@ class EncoderDecoder(BaseSegmentor):
                       gt_semantic_seg,
                       seg_weight=None,
                       return_feat=False,
-                      is_training=True
-                      ):
+                      is_training=True):
         """Forward function for training.
 
         Args:
@@ -241,12 +272,26 @@ class EncoderDecoder(BaseSegmentor):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
-        # x, img, img_metas = self.extract_feat(img, img_metas, 
-        #                                       is_training
-        #                                       )
-        x = self.extract_feat(img, img_metas, 
-                            is_training
-                            )
+        x, img, img_metas = self.extract_feat(img, img_metas, is_training)
+        # print("x[0] shape", x[0].shape); print("len(x) is", len(x))
+        # print("gt_semantic_seg shape", gt_semantic_seg.shape) # [bs, 1, h, w]
+        # print("img_metas", img_metas)
+
+        # # NOTE: scale the gt_semantic_seg => skip for now
+        # if self.warp_scale != 1.0:
+        #     # You might need to adjust the sizes to your specific needs
+        #     # The size should be provided as (h, w)
+        #     h, w = gt_semantic_seg.shape[2], gt_semantic_seg.shape[3]
+        #     new_h, new_w = int(h * self.warp_scale), int(w * self.warp_scale)
+            
+        #     # Rescale using the interpolate function
+        #     # mode 'nearest' is typically used for segmentation maps to prevent mixing class labels
+        #     gt_semantic_seg = F.interpolate(gt_semantic_seg.float(),  # Cast to float for interpolate
+        #                                     size=(new_h, new_w), 
+        #                                     mode='nearest').type(torch.int64)  # Cast back to int64 after interpolation
+        
+        # print("=====================================>")
+        # print("gt_semantic_seg shape", gt_semantic_seg.shape) # [bs, 1, h, w]
 
         losses = dict()
         if return_feat:
@@ -310,14 +355,11 @@ class EncoderDecoder(BaseSegmentor):
                 warning=False)
         return preds
 
-    def whole_inference(self, img, img_meta, rescale, 
-                        is_training=False
-                        ):
+    def whole_inference(self, img, img_meta, rescale, is_training=False):
         """Inference with full image."""
 
-        seg_logit = self.encode_decode(img, img_meta, 
-                                       is_training
-                                       )
+        seg_logit = self.encode_decode(img, img_meta, is_training)
+        # print("getting seg_logit shape", seg_logit.shape); # [1, num_classes, h, w]
 
         if rescale:
             # support dynamic shape for onnx

@@ -28,6 +28,7 @@ from mmseg.models.utils.dacs_transforms import (denorm, get_class_masks,
 from mmseg.models.utils.visualization import subplotimg
 from mmseg.utils.utils import downscale_label_ratio
 
+
 def _params_equal(ema_model, model):
     for ema_param, param in zip(ema_model.named_parameters(),
                                 model.named_parameters()):
@@ -85,6 +86,7 @@ class DACS(UDADecorator):
 
         # NOTE: add warp src only flag
         self.warp_tgt = cfg.get('warp_tgt', True)
+        # print("self.warp_tgt is", self.warp_tgt)
 
     def get_ema_model(self):
         return get_module(self.ema_model)
@@ -144,6 +146,12 @@ class DACS(UDADecorator):
         """
 
         optimizer.zero_grad()
+
+        # TODO: debug this part later: how to scale the images properly?
+        # print("data_batch", data_batch)
+        # print("data_batch['img'].shape", data_batch['img'].shape)
+        # print("data_batch['gt_semantic_seg'].shape", data_batch['gt_semantic_seg'].shape)
+
         log_vars = self(**data_batch)
         optimizer.step()
 
@@ -167,8 +175,9 @@ class DACS(UDADecorator):
         assert self.enable_fdist
         with torch.no_grad():
             self.get_imnet_model().eval()
-            feat_imnet = self.get_imnet_model().extract_feat(img)
-            # feat_imnet = self.get_imnet_model().extract_feat(img)[0]
+            # NOTE: hardcode here to get the feature
+            # feat_imnet = self.get_imnet_model().extract_feat(img)
+            feat_imnet = self.get_imnet_model().extract_feat(img)[0]
             feat_imnet = [f.detach() for f in feat_imnet]
         lay = -1
         if self.fdist_classes is not None:
@@ -208,6 +217,12 @@ class DACS(UDADecorator):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
+        # print("img.shape", img.shape) # [2, 3, 512, 1024]
+        # print("img_metas", img_metas)
+        # print("gt_semantic_seg.shape", gt_semantic_seg.shape) # [2, 1, 512, 1024]
+        # print("target_img.shape", target_img.shape) # [2, 3, 540, 960]
+        # print("target_img_metas", target_img_metas)
+
         log_vars = {}
         batch_size = img.shape[0]
         dev = img.device
@@ -234,6 +249,7 @@ class DACS(UDADecorator):
         }
 
         # Train on source images
+        # print("=========>source training")
         clean_losses = self.get_model().forward_train(
             img, img_metas, gt_semantic_seg, return_feat=True)
         src_feat = clean_losses.pop('features')
@@ -249,6 +265,7 @@ class DACS(UDADecorator):
             mmcv.print_log(f'Seg. Grad.: {grad_mag}', 'mmseg')
 
         # ImageNet feature distance
+        # print('=========>feature distance')
         if self.enable_fdist:
             feat_loss, feat_log = self.calc_feat_dist(img, gt_semantic_seg,
                                                       src_feat)
@@ -264,6 +281,7 @@ class DACS(UDADecorator):
                 mmcv.print_log(f'Fdist Grad.: {grad_mag}', 'mmseg')
 
         # Generate pseudo-label
+        # print('=========>pseudo-label')
         for m in self.get_ema_model().modules():
             if isinstance(m, _DropoutNd):
                 m.training = False
@@ -271,7 +289,7 @@ class DACS(UDADecorator):
                 m.training = False
         ema_logits = self.get_ema_model().encode_decode(
             target_img, target_img_metas,
-            is_training=self.warp_tgt # NOTE: add non-warp for here
+            is_training=self.warp_tgt # NOTE: add non-warp for here also
             ) 
 
         ema_softmax = torch.softmax(ema_logits.detach(), dim=1)
@@ -296,16 +314,43 @@ class DACS(UDADecorator):
         mix_masks = get_class_masks(gt_semantic_seg)
 
         for i in range(batch_size):
+
+            # #  this way training not good
+            # mixed_img[i] = target_img[i].unsqueeze(0)
+            # mixed_lbl[i] = pseudo_label[i].unsqueeze(0).unsqueeze(0)
+            
+            # print("img[i]", img[i].shape)
+            # print("target_img[i]", target_img[i].shape)
+            # print("mixed_img[i]", mixed_img[i].shape)
+            # print("mixed_lbl[i]", mixed_lbl[i].shape)
+
+            # NOTE: old code below
             strong_parameters['mix'] = mix_masks[i]
+
             mixed_img[i], mixed_lbl[i] = strong_transform(
                 strong_parameters,
                 data=torch.stack((img[i], target_img[i])),
                 target=torch.stack((gt_semantic_seg[i][0], pseudo_label[i])))
+            
             _, pseudo_weight[i] = strong_transform(
                 strong_parameters,
                 target=torch.stack((gt_pixel_weight[i], pseudo_weight[i])))
+            
+            # NOTE: for debug visualization
+            # visualize and save images
+            # import torchvision.utils as vutils
+            # vutils.save_image(img[i], f"visuals/img_{i}.png", normalize=True)
+            # vutils.save_image(target_img[i], f"visuals/target_img_{i}.png", normalize=True)
+            # vutils.save_image(mixed_img[i], f"visuals/mixed_img_{i}.png", normalize=True)
+            # print("saving images!")
+            # exit()
+        
+        # NOTE: keep this part same
         mixed_img = torch.cat(mixed_img)
         mixed_lbl = torch.cat(mixed_lbl)
+
+        # print("mixed_img", mixed_img.shape) # [2, 3, x, x]
+        # print("mixed_lbl", mixed_lbl.shape) # [2, 1, x, x]
 
         # Train on mixed images
         mix_losses = self.get_model().forward_train(
@@ -342,11 +387,21 @@ class DACS(UDADecorator):
                 )
                 subplotimg(axs[0][0], vis_img[j], 'Source Image')
                 subplotimg(axs[1][0], vis_trg_img[j], 'Target Image')
+
+                # # TODO: save gt_semantic_seg as png
+                # print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                # print("gt_semantic_seg[j].shape", gt_semantic_seg[j].shape)
+                # print("filename", img_metas[j]['filename'])
+                # save_image(gt_semantic_seg[j].float(), f"visuals/gt_semantic_seg_{j}.png", normalize=True)
+
                 subplotimg(
                     axs[0][1],
                     gt_semantic_seg[j],
                     'Source Seg GT',
                     cmap='cityscapes')
+                
+                # exit()
+
                 subplotimg(
                     axs[1][1],
                     pseudo_label[j],

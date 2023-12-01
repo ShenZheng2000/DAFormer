@@ -18,15 +18,19 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from timm.models.layers import DropPath
+from torch.nn import functional as F
 from torch.nn.modules.dropout import _DropoutNd
 
 from mmseg.core import add_prefix
 from mmseg.models import UDA, build_segmentor
+from mmseg.models.uda.masking_consistency_module import \
+    MaskingConsistencyModule
 from mmseg.models.uda.uda_decorator import UDADecorator, get_module
 from mmseg.models.utils.dacs_transforms import (denorm, get_class_masks,
                                                 get_mean_std, strong_transform)
-from mmseg.models.utils.visualization import subplotimg
+from mmseg.models.utils.visualization import prepare_debug_out, subplotimg
 from mmseg.utils.utils import downscale_label_ratio
+
 
 def _params_equal(ema_model, model):
     for ema_param, param in zip(ema_model.named_parameters(),
@@ -55,6 +59,11 @@ class DACS(UDADecorator):
         super(DACS, self).__init__(**cfg)
         self.local_iter = 0
         self.max_iters = cfg['max_iters']
+
+        # NOTE: change the way we get the source only flag
+        # self.source_only = cfg['source_only']
+        self.source_only = cfg.get('source_only', False)
+
         self.alpha = cfg['alpha']
         self.pseudo_threshold = cfg['pseudo_threshold']
         self.psweight_ignore_top = cfg['pseudo_weight_ignore_top']
@@ -68,6 +77,12 @@ class DACS(UDADecorator):
         self.color_jitter_s = cfg['color_jitter_strength']
         self.color_jitter_p = cfg['color_jitter_probability']
         self.debug_img_interval = cfg['debug_img_interval']
+        
+        # NOTE: change the way we get the mask mode
+        self.mask_mode = cfg['mask_mode']
+        print("self.mask_mode is", self.mask_mode)
+
+        self.enable_masking = self.mask_mode is not None
         self.print_grad_magnitude = cfg['print_grad_magnitude']
         assert self.mix == 'class'
 
@@ -76,16 +91,20 @@ class DACS(UDADecorator):
 
         self.class_probs = {}
         ema_cfg = deepcopy(cfg['model'])
-        self.ema_model = build_segmentor(ema_cfg)
-
+        if not self.source_only:
+            self.ema_model = build_segmentor(ema_cfg)
+        self.mic = None
+        if self.enable_masking:
+            self.mic = MaskingConsistencyModule(require_teacher=False, cfg=cfg)
         if self.enable_fdist:
             self.imnet_model = build_segmentor(deepcopy(cfg['model']))
         else:
             self.imnet_model = None
 
-        # NOTE: add warp src only flag
+        # NOTE: add warp src only flag!!!!!!!!!!!!!!!!!!!!!!!
         self.warp_tgt = cfg.get('warp_tgt', True)
-
+        print("self.warp_tgt is", self.warp_tgt)
+        
     def get_ema_model(self):
         return get_module(self.ema_model)
 
@@ -93,6 +112,8 @@ class DACS(UDADecorator):
         return get_module(self.imnet_model)
 
     def _init_ema_weights(self):
+        if self.source_only:
+            return
         for param in self.get_ema_model().parameters():
             param.detach_()
         mp = list(self.get_model().parameters())
@@ -104,6 +125,8 @@ class DACS(UDADecorator):
                 mcp[i].data[:] = mp[i].data[:].clone()
 
     def _update_ema(self, iter):
+        if self.source_only:
+            return
         alpha_teacher = min(1 - 1 / (iter + 1), self.alpha)
         for ema_param, param in zip(self.get_ema_model().parameters(),
                                     self.get_model().parameters()):
@@ -115,7 +138,7 @@ class DACS(UDADecorator):
                 ema_param.data[:] = \
                     alpha_teacher * ema_param[:].data[:] + \
                     (1 - alpha_teacher) * param[:].data[:]
-
+                
     def train_step(self, data_batch, optimizer, **kwargs):
         """The iteration step during training.
 
@@ -165,10 +188,11 @@ class DACS(UDADecorator):
 
     def calc_feat_dist(self, img, gt, feat=None):
         assert self.enable_fdist
+
+        # NOTE: do not use HRDA for now
         with torch.no_grad():
             self.get_imnet_model().eval()
             feat_imnet = self.get_imnet_model().extract_feat(img)
-            # feat_imnet = self.get_imnet_model().extract_feat(img)[0]
             feat_imnet = [f.detach() for f in feat_imnet]
         lay = -1
         if self.fdist_classes is not None:
@@ -180,19 +204,60 @@ class DACS(UDADecorator):
                                                 255).long().detach()
             fdist_mask = torch.any(gt_rescaled[..., None] == fdclasses, -1)
             feat_dist = self.masked_feat_dist(feat[lay], feat_imnet[lay],
-                                              fdist_mask)
+                                                fdist_mask)
             self.debug_fdist_mask = fdist_mask
             self.debug_gt_rescale = gt_rescaled
         else:
             feat_dist = self.masked_feat_dist(feat[lay], feat_imnet[lay])
+
         feat_dist = self.fdist_lambda * feat_dist
         feat_loss, feat_log = self._parse_losses(
             {'loss_imnet_feat_dist': feat_dist})
         feat_log.pop('loss', None)
         return feat_loss, feat_log
 
-    def forward_train(self, img, img_metas, gt_semantic_seg, target_img,
-                      target_img_metas):
+    def update_debug_state(self):
+        debug = self.local_iter % self.debug_img_interval == 0
+        self.get_model().automatic_debug = False
+        self.get_model().debug = debug
+        if not self.source_only:
+            self.get_ema_model().automatic_debug = False
+            self.get_ema_model().debug = debug
+        if self.mic is not None:
+            self.mic.debug = debug
+
+    def get_pseudo_label_and_weight(self, logits):
+        ema_softmax = torch.softmax(logits.detach(), dim=1)
+        pseudo_prob, pseudo_label = torch.max(ema_softmax, dim=1)
+        ps_large_p = pseudo_prob.ge(self.pseudo_threshold).long() == 1
+        ps_size = np.size(np.array(pseudo_label.cpu()))
+        pseudo_weight = torch.sum(ps_large_p).item() / ps_size
+        pseudo_weight = pseudo_weight * torch.ones(
+            pseudo_prob.shape, device=logits.device)
+        return pseudo_label, pseudo_weight
+
+    def filter_valid_pseudo_region(self, pseudo_weight, valid_pseudo_mask):
+        if self.psweight_ignore_top > 0:
+            # Don't trust pseudo-labels in regions with potential
+            # rectification artifacts. This can lead to a pseudo-label
+            # drift from sky towards building or traffic light.
+            assert valid_pseudo_mask is None
+            pseudo_weight[:, :self.psweight_ignore_top, :] = 0
+        if self.psweight_ignore_bottom > 0:
+            assert valid_pseudo_mask is None
+            pseudo_weight[:, -self.psweight_ignore_bottom:, :] = 0
+        if valid_pseudo_mask is not None:
+            pseudo_weight *= valid_pseudo_mask.squeeze(1)
+        return pseudo_weight
+
+    def forward_train(self,
+                      img,
+                      img_metas,
+                      gt_semantic_seg,
+                      target_img,
+                      target_img_metas,
+                      rare_class=None,
+                      valid_pseudo_mask=None):
         """Forward function for training.
 
         Args:
@@ -221,6 +286,11 @@ class DACS(UDADecorator):
             self._update_ema(self.local_iter)
             # assert not _params_equal(self.get_ema_model(), self.get_model())
             # assert self.get_ema_model().training
+        if self.mic is not None:
+            self.mic.update_weights(self.get_model(), self.local_iter)
+
+        self.update_debug_state()
+        seg_debug = {}
 
         means, stds = get_mean_std(img_metas, dev)
         strong_parameters = {
@@ -237,6 +307,7 @@ class DACS(UDADecorator):
         clean_losses = self.get_model().forward_train(
             img, img_metas, gt_semantic_seg, return_feat=True)
         src_feat = clean_losses.pop('features')
+        seg_debug['Source'] = self.get_model().debug_output
         clean_loss, clean_log_vars = self._parse_losses(clean_losses)
         log_vars.update(clean_log_vars)
         clean_loss.backward(retain_graph=self.enable_fdist)
@@ -252,8 +323,8 @@ class DACS(UDADecorator):
         if self.enable_fdist:
             feat_loss, feat_log = self.calc_feat_dist(img, gt_semantic_seg,
                                                       src_feat)
-            feat_loss.backward()
             log_vars.update(add_prefix(feat_log, 'src'))
+            feat_loss.backward()
             if self.print_grad_magnitude:
                 params = self.get_model().backbone.parameters()
                 fd_grads = [
@@ -262,65 +333,79 @@ class DACS(UDADecorator):
                 fd_grads = [g2 - g1 for g1, g2 in zip(seg_grads, fd_grads)]
                 grad_mag = calc_grad_magnitude(fd_grads)
                 mmcv.print_log(f'Fdist Grad.: {grad_mag}', 'mmseg')
+        del src_feat, clean_loss
+        if self.enable_fdist:
+            del feat_loss
 
-        # Generate pseudo-label
-        for m in self.get_ema_model().modules():
-            if isinstance(m, _DropoutNd):
-                m.training = False
-            if isinstance(m, DropPath):
-                m.training = False
-        ema_logits = self.get_ema_model().encode_decode(
-            target_img, target_img_metas,
-            is_training=self.warp_tgt # NOTE: add non-warp for here
-            ) 
+        pseudo_label, pseudo_weight = None, None
+        if not self.source_only:
+            # Generate pseudo-label
+            for m in self.get_ema_model().modules():
+                if isinstance(m, _DropoutNd):
+                    m.training = False
+                if isinstance(m, DropPath):
+                    m.training = False
+            ema_logits = self.get_ema_model().generate_pseudo_label(
+                target_img, target_img_metas)
+            seg_debug['Target'] = self.get_ema_model().debug_output
 
-        ema_softmax = torch.softmax(ema_logits.detach(), dim=1)
-        pseudo_prob, pseudo_label = torch.max(ema_softmax, dim=1)
-        ps_large_p = pseudo_prob.ge(self.pseudo_threshold).long() == 1
-        ps_size = np.size(np.array(pseudo_label.cpu()))
-        pseudo_weight = torch.sum(ps_large_p).item() / ps_size
-        pseudo_weight = pseudo_weight * torch.ones(
-            pseudo_prob.shape, device=dev)
+            pseudo_label, pseudo_weight = self.get_pseudo_label_and_weight(
+                ema_logits)
+            del ema_logits
 
-        if self.psweight_ignore_top > 0:
-            # Don't trust pseudo-labels in regions with potential
-            # rectification artifacts. This can lead to a pseudo-label
-            # drift from sky towards building or traffic light.
-            pseudo_weight[:, :self.psweight_ignore_top, :] = 0
-        if self.psweight_ignore_bottom > 0:
-            pseudo_weight[:, -self.psweight_ignore_bottom:, :] = 0
-        gt_pixel_weight = torch.ones((pseudo_weight.shape), device=dev)
+            pseudo_weight = self.filter_valid_pseudo_region(
+                pseudo_weight, valid_pseudo_mask)
+            gt_pixel_weight = torch.ones((pseudo_weight.shape), device=dev)
 
-        # Apply mixing
-        mixed_img, mixed_lbl = [None] * batch_size, [None] * batch_size
-        mix_masks = get_class_masks(gt_semantic_seg)
+            # Apply mixing
+            mixed_img, mixed_lbl = [None] * batch_size, [None] * batch_size
+            mixed_seg_weight = pseudo_weight.clone()
+            mix_masks = get_class_masks(gt_semantic_seg)
 
-        for i in range(batch_size):
-            strong_parameters['mix'] = mix_masks[i]
-            mixed_img[i], mixed_lbl[i] = strong_transform(
-                strong_parameters,
-                data=torch.stack((img[i], target_img[i])),
-                target=torch.stack((gt_semantic_seg[i][0], pseudo_label[i])))
-            _, pseudo_weight[i] = strong_transform(
-                strong_parameters,
-                target=torch.stack((gt_pixel_weight[i], pseudo_weight[i])))
-        mixed_img = torch.cat(mixed_img)
-        mixed_lbl = torch.cat(mixed_lbl)
+            for i in range(batch_size):
+                strong_parameters['mix'] = mix_masks[i]
+                mixed_img[i], mixed_lbl[i] = strong_transform(
+                    strong_parameters,
+                    data=torch.stack((img[i], target_img[i])),
+                    target=torch.stack(
+                        (gt_semantic_seg[i][0], pseudo_label[i])))
+                _, mixed_seg_weight[i] = strong_transform(
+                    strong_parameters,
+                    target=torch.stack((gt_pixel_weight[i], pseudo_weight[i])))
+            del gt_pixel_weight
+            mixed_img = torch.cat(mixed_img)
+            mixed_lbl = torch.cat(mixed_lbl)
 
-        # Train on mixed images
-        mix_losses = self.get_model().forward_train(
-            mixed_img, img_metas, mixed_lbl, pseudo_weight, return_feat=True, 
-            is_training=self.warp_tgt # NOTE: add no warp flag here!!!
-            ) 
-        mix_losses.pop('features')
-        mix_losses = add_prefix(mix_losses, 'mix')
-        mix_loss, mix_log_vars = self._parse_losses(mix_losses)
-        log_vars.update(mix_log_vars)
-        mix_loss.backward()
+            # Train on mixed images
+            mix_losses = self.get_model().forward_train(
+                mixed_img,
+                img_metas,
+                mixed_lbl,
+                seg_weight=mixed_seg_weight,
+                return_feat=False,
+                is_training=self.warp_tgt # NOTE: add no warp flag here!!!
+            )
+            seg_debug['Mix'] = self.get_model().debug_output
+            mix_losses = add_prefix(mix_losses, 'mix')
+            mix_loss, mix_log_vars = self._parse_losses(mix_losses)
+            log_vars.update(mix_log_vars)
+            mix_loss.backward()
 
-        if self.local_iter % self.debug_img_interval == 0:
-            out_dir = os.path.join(self.train_cfg['work_dir'],
-                                   'class_mix_debug')
+        # Masked Training
+        if self.enable_masking and self.mask_mode.startswith('separate'):
+            masked_loss = self.mic(self.get_model(), img, img_metas,
+                                   gt_semantic_seg, target_img,
+                                   target_img_metas, valid_pseudo_mask,
+                                   pseudo_label, pseudo_weight)
+            seg_debug.update(self.mic.debug_output)
+            masked_loss = add_prefix(masked_loss, 'masked')
+            masked_loss, masked_log_vars = self._parse_losses(masked_loss)
+            log_vars.update(masked_log_vars)
+            masked_loss.backward()
+
+        if self.local_iter % self.debug_img_interval == 0 and \
+                not self.source_only:
+            out_dir = os.path.join(self.train_cfg['work_dir'], 'debug')
             os.makedirs(out_dir, exist_ok=True)
             vis_img = torch.clamp(denorm(img, means, stds), 0, 1)
             vis_trg_img = torch.clamp(denorm(target_img, means, stds), 0, 1)
@@ -357,10 +442,15 @@ class DACS(UDADecorator):
                     axs[1][2], mix_masks[j][0], 'Domain Mask', cmap='gray')
                 # subplotimg(axs[0][3], pred_u_s[j], "Seg Pred",
                 #            cmap="cityscapes")
+                if mixed_lbl is not None:
+                    subplotimg(
+                        axs[1][3], mixed_lbl[j], 'Seg Targ', cmap='cityscapes')
                 subplotimg(
-                    axs[1][3], mixed_lbl[j], 'Seg Targ', cmap='cityscapes')
-                subplotimg(
-                    axs[0][3], pseudo_weight[j], 'Pseudo W.', vmin=0, vmax=1)
+                    axs[0][3],
+                    mixed_seg_weight[j],
+                    'Pseudo W.',
+                    vmin=0,
+                    vmax=1)
                 if self.debug_fdist_mask is not None:
                     subplotimg(
                         axs[0][4],
@@ -379,6 +469,44 @@ class DACS(UDADecorator):
                     os.path.join(out_dir,
                                  f'{(self.local_iter + 1):06d}_{j}.png'))
                 plt.close()
+
+        if self.local_iter % self.debug_img_interval == 0:
+            out_dir = os.path.join(self.train_cfg['work_dir'], 'debug')
+            os.makedirs(out_dir, exist_ok=True)
+            if seg_debug['Source'] is not None and seg_debug:
+                if 'Target' in seg_debug:
+                    seg_debug['Target']['Pseudo W.'] = mixed_seg_weight.cpu(
+                    ).numpy()
+                for j in range(batch_size):
+                    cols = len(seg_debug)
+                    rows = max(len(seg_debug[k]) for k in seg_debug.keys())
+                    fig, axs = plt.subplots(
+                        rows,
+                        cols,
+                        figsize=(5 * cols, 5 * rows),
+                        gridspec_kw={
+                            'hspace': 0.1,
+                            'wspace': 0,
+                            'top': 0.95,
+                            'bottom': 0,
+                            'right': 1,
+                            'left': 0
+                        },
+                        squeeze=False,
+                    )
+                    for k1, (n1, outs) in enumerate(seg_debug.items()):
+                        for k2, (n2, out) in enumerate(outs.items()):
+                            subplotimg(
+                                axs[k2][k1],
+                                **prepare_debug_out(f'{n1} {n2}', out[j],
+                                                    means, stds))
+                    for ax in axs.flat:
+                        ax.axis('off')
+                    plt.savefig(
+                        os.path.join(out_dir,
+                                     f'{(self.local_iter + 1):06d}_{j}_s.png'))
+                    plt.close()
+                del seg_debug
         self.local_iter += 1
 
         return log_vars

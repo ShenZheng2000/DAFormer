@@ -221,9 +221,7 @@ def generate_experiment_cfgs(id):
     # -------------------------------------------------------------------------
     cfgs = []
     n_gpus = 1
-    # TODO: hardcode bs as 1 for debug now!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     batch_size = 2
-    # batch_size = 1
     iters = 40000
     opt, lr, schedule, pmult = 'adamw', 0.00006, 'poly10warm', True
     crop = '512x512'
@@ -244,7 +242,6 @@ def generate_experiment_cfgs(id):
         'synthia': 'synthia',
         'gta': 'gta',
         'cityscapes': 'cityscapes',
-        'idd': 'idd',
     }
 
     def get_warp_dataset_name(dataset_name):
@@ -252,6 +249,8 @@ def generate_experiment_cfgs(id):
         return DATASET_NAME_MAPPING.get(dataset_name, dataset_name)  # default to the original name if no mapping is found
 
     def config_for_id(id_value, src_dataset, tgt_dataset):
+        # if id_value in [80, 90, 110, 120, 130, 140, ]: # ======> baseline experiments
+        #     return []
         if id_value % 10 == 0:
             return []
 
@@ -269,7 +268,7 @@ def generate_experiment_cfgs(id):
         }
 
         # TODO: use this for visual debug only!
-        cfg['model']['warp_debug'] = False
+        cfg['model']['warp_debug'] = True
 
         if id_value in [81, 91]: # ======> fovea warping (src & tgt)
             cfg['model']['warp_fovea'] = True
@@ -319,21 +318,17 @@ def generate_experiment_cfgs(id):
             elif id == 228:
                 cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/synthia_seg2det_gt.json'
 
-            else:
-                pass
-
-
         return cfg
 
 
     # Main code
-    if 80 <= id <= 259:
+    if 80 <= id <= 229:
         # Predefine datasets for experiments
         if 80 <= id <= 89 or 101 <= id <= 104: # 101-104 is the special case here
             datasets = [('cityscapes', 'darkzurich')]
-        elif 110 <= id < 120 or 130 <= id < 140 or 150 <= id < 160 or 170 <= id <= 179 or 190 <= id <= 199 or 230 <= id <= 239:
+        elif 110 <= id < 120 or 130 <= id < 140 or 150 <= id < 160 or 170 <= id <= 179 or 190 <= id <= 199:
             datasets = [('cityscapes', 'darkzurich')]  # for cs2dz with varying image percentages
-        elif 120 <= id < 130 or 140 <= id < 150 or 160 <= id <= 169 or 180 <= id <= 189 or 200 <= id <= 209 or 240 <= id <= 249:
+        elif 120 <= id < 130 or 140 <= id < 150 or 160 <= id <= 169 or 180 <= id <= 189 or 200 <= id <= 209:
             datasets = [('cityscapes', 'acdc')]       # for cs2acdc with varying image percentages\
         # (id 210 to 219) => gta2cs experiments
         elif 210 <= id <= 219:
@@ -341,8 +336,6 @@ def generate_experiment_cfgs(id):
         # (id 220 to 229) => cs2syn experiments
         elif 220 <= id <= 229:
             datasets = [('synthia', 'cityscapes')]
-        elif 250 <= id <= 259:
-            datasets = [('cityscapes', 'idd')]
         else:
             datasets = [('cityscapes', 'acdc')]
 
@@ -351,7 +344,6 @@ def generate_experiment_cfgs(id):
         uda = 'dacs_a999_fdthings'
         rcs_T = 0.01
         plcrop = True
-
         crop = '512x1024'
 
         # ############## Here is the dataset ratio for difference experiments ##############
@@ -379,11 +371,8 @@ def generate_experiment_cfgs(id):
             crop = '512x1024_025_uniform'
             iters = 10000
 
-        elif 230 <= id <= 249:
-            crop = '1024x2048'
-            # NOTE: half batch_size, and double iters
-            batch_size = 1
-            iters = 80000
+        else:
+            pass
 
         for (source, target), seed in itertools.product(datasets, seeds):
             cfg = config_from_vars()  # base configuration

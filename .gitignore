@@ -123,3 +123,14 @@ configs/tmp_param.json
 configs/generated/
 *.pdf
 *.pgf
+
+# Other files
+*.png
+*.jpg
+*.out
+*.tar.gz
+
+# Other folders
+cityscapesScripts/
+backups/
+mmseg/transforms

@@ -8,8 +8,13 @@ uda = dict(
     type='DACS',
     alpha=0.99,
     pseudo_threshold=0.968,
-    pseudo_weight_ignore_top=0,
-    pseudo_weight_ignore_bottom=0,
+
+    # NOTE: change these codes for now
+    # pseudo_weight_ignore_top=0,
+    # pseudo_weight_ignore_bottom=0,
+    pseudo_weight_ignore_top=15,
+    pseudo_weight_ignore_bottom=120,
+
     imnet_feature_dist_lambda=0,
     imnet_feature_dist_classes=None,
     imnet_feature_dist_scale_min_ratio=None,
@@ -19,5 +24,13 @@ uda = dict(
     color_jitter_probability=0.2,
     debug_img_interval=1000,
     print_grad_magnitude=False,
+
+    # # NOTE: add masking stuffs here
+    # mask_mode=None,
+    # mask_alpha='same',
+    # mask_pseudo_threshold='same',
+    # mask_lambda=0,
+    # mask_generator=None,
+
 )
 use_ddp_wrapper = True

@@ -112,15 +112,23 @@ class UDADataset(object):
         }
 
     def __getitem__(self, idx):
+        # if self.rcs_enabled:
+        #     return self.get_rare_class_sample()
+        # NOTE: hardcode debug for now
         if self.rcs_enabled:
-            return self.get_rare_class_sample()
-        else:
-            s1 = self.source[idx // len(self.target)]
-            s2 = self.target[idx % len(self.target)]
-            return {
-                **s1, 'target_img_metas': s2['img_metas'],
-                'target_img': s2['img']
-            }
+            try:
+                # Attempt to get a rare class sample
+                return self.get_rare_class_sample()
+            except KeyError:
+                # If there is a KeyError, fall back to the regular sampling method
+                pass
+
+        s1 = self.source[idx // len(self.target)]
+        s2 = self.target[idx % len(self.target)]
+        return {
+            **s1, 'target_img_metas': s2['img_metas'],
+            'target_img': s2['img']
+        }
 
     def __len__(self):
         return len(self.source) * len(self.target)

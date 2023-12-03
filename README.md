@@ -2,7 +2,7 @@
 
 ## Training
 
-For convenience, we provide an [annotated config file](configs/daformer/gta2cs_uda_warm_fdthings_rcs_croppl_a999_daformer_mitb5_s0.py) of the final DAFormer.
+<!-- For convenience, we provide an [annotated config file](configs/daformer/gta2cs_uda_warm_fdthings_rcs_croppl_a999_daformer_mitb5_s0.py) of the final DAFormer.
 A training job can be launched using:
 
 ```shell
@@ -10,7 +10,9 @@ python run_experiments.py --config configs/daformer/gta2cs_uda_warm_fdthings_rcs
 ```
 
 For the experiments in our paper (e.g. network architecture comparison,
-component ablations, ...), we use a system to automatically generate
+component ablations, ...),  -->
+
+We use a system to automatically generate
 and train the configs:
 
 ```shell

@@ -6,7 +6,7 @@ run_experiment() {
     CUDA_VISIBLE_DEVICES="$GPU_ID" \
     nohup python run_experiments.py \
     --exp "$EXP_ID" \
-    > "outs/${EXP_ID}_v3.out" 2>&1 &
+    > "outs/${EXP_ID}_v4.out" 2>&1 &
 }
 
 # run_experiment 0 80
@@ -100,3 +100,11 @@ run_experiment() {
 # CS2IDD
 # run_experiment 2 250
 # run_experiment 1 258
+
+# # CS2FCS
+# run_experiment 0 260
+# run_experiment 1 268
+
+# IDD2CS
+# run_experiment 0 270
+# run_experiment 1 275

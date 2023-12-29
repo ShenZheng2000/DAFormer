@@ -208,6 +208,8 @@ class DACS(UDADecorator):
         Returns:
             dict[str, Tensor]: a dictionary of loss components
         """
+        # print("gt_semantic_seg is", gt_semantic_seg)
+
         log_vars = {}
         batch_size = img.shape[0]
         dev = img.device

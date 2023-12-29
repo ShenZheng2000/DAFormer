@@ -245,6 +245,7 @@ def generate_experiment_cfgs(id):
         'gta': 'gta',
         'cityscapes': 'cityscapes',
         'idd': 'idd',
+        'foggy_cityscapes': 'foggy_cityscapes',
     }
 
     def get_warp_dataset_name(dataset_name):
@@ -318,6 +319,8 @@ def generate_experiment_cfgs(id):
                 cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/synthia_seg2det.json'
             elif id == 228:
                 cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/synthia_seg2det_gt.json'
+            elif id == 275:
+                cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/IDD_seg2det.json'
 
             else:
                 pass
@@ -327,7 +330,9 @@ def generate_experiment_cfgs(id):
 
 
     # Main code
-    if 80 <= id <= 259:
+    # if 80 <= id <= 269:
+    if True:
+
         # Predefine datasets for experiments
         if 80 <= id <= 89 or 101 <= id <= 104: # 101-104 is the special case here
             datasets = [('cityscapes', 'darkzurich')]
@@ -343,6 +348,10 @@ def generate_experiment_cfgs(id):
             datasets = [('synthia', 'cityscapes')]
         elif 250 <= id <= 259:
             datasets = [('cityscapes', 'idd')]
+        elif 260 <= id <= 269:
+            datasets = [('cityscapes', 'foggy_cityscapes')]
+        elif 270 <= id <= 279:
+            datasets = [('idd', 'cityscapes')]
         else:
             datasets = [('cityscapes', 'acdc')]
 

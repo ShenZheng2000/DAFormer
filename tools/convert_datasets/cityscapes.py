@@ -15,9 +15,17 @@ import numpy as np
 from cityscapesscripts.preparation.json2labelImg import json2labelImg
 from PIL import Image
 
+# TODO: for IDD dataset, we might need a custom mapping for the classes!
 
 def convert_json_to_label(json_file):
+
     label_file = json_file.replace('_polygons.json', '_labelTrainIds.png')
+
+    # NOTE: use this for IDD dataset!!!!!!!!!!!!!!!!!!!!!
+    if not osp.exists(label_file):
+        label_file = json_file.replace('_polygons.json', '_labelcsTrainIds.png')
+
+    # NOTE:  has hardcode some lines in here to skip unknown labels
     json2labelImg(json_file, label_file, 'trainIds')
 
     if 'train/' in json_file:
@@ -96,15 +104,28 @@ def main():
 
     save_class_stats(out_dir, sample_class_stats)
 
-    split_names = ['train', 'val', 'test']
+    # NOTE: for Cityscapes dataset, we have a test set
+    try:
 
-    for split in split_names:
-        filenames = []
-        for poly in mmcv.scandir(
-                osp.join(gt_dir, split), '_polygons.json', recursive=True):
-            filenames.append(poly.replace('_gtFine_polygons.json', ''))
-        with open(osp.join(out_dir, f'{split}.txt'), 'w') as f:
-            f.writelines(f + '\n' for f in filenames)
+        split_names = ['train', 'val', 'test']
+        for split in split_names:
+            filenames = []
+            for poly in mmcv.scandir(
+                    osp.join(gt_dir, split), '_polygons.json', recursive=True):
+                filenames.append(poly.replace('_gtFine_polygons.json', ''))
+            with open(osp.join(out_dir, f'{split}.txt'), 'w') as f:
+                f.writelines(f + '\n' for f in filenames)
+
+    # NOTE: for IDD dataset, we do not have a test set
+    except:
+        split_names = ['train', 'val']
+        for split in split_names:
+            filenames = []
+            for poly in mmcv.scandir(
+                    osp.join(gt_dir, split), '_polygons.json', recursive=True):
+                filenames.append(poly.replace('_gtFine_polygons.json', ''))
+            with open(osp.join(out_dir, f'{split}.txt'), 'w') as f:
+                f.writelines(f + '\n' for f in filenames)
 
 
 if __name__ == '__main__':

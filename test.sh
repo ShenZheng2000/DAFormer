@@ -8,7 +8,11 @@
 # NOTE: change latest.pth to best (or other) checkpoint if needed
 
 TEST_ROOT=$1
-CONFIG_FILE="${TEST_ROOT}/*${TEST_ROOT: -1}.json"
+
+# CONFIG_FILE="${TEST_ROOT}/*${TEST_ROOT: -1}.json" => NOTE: this matching is problematic if there are multiple json files in the directory
+DIR_NAME=$(basename "${TEST_ROOT}")
+CONFIG_FILE="${TEST_ROOT}/${DIR_NAME}.json"
+
 CHECKPOINT_FILE="${TEST_ROOT}/best_mIoU_iter_*.pth"
 SHOW_DIR="${TEST_ROOT}/preds/"
 echo 'Config File:' $CONFIG_FILE

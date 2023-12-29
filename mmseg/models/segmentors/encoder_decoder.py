@@ -311,9 +311,12 @@ class EncoderDecoder(BaseSegmentor):
         return preds
 
     def whole_inference(self, img, img_meta, rescale, 
-                        is_training=False
+                        is_training=False,
                         ):
         """Inference with full image."""
+
+        # TODO: hardcode this as True for now, set to False later
+        # is_training = True
 
         seg_logit = self.encode_decode(img, img_meta, 
                                        is_training

@@ -1,6 +1,6 @@
 ## DAFormer: Improving Network Architectures and Training Strategies for Domain-Adaptive Semantic Segmentation
 
-## Training
+# Training
 
 We use a system to automatically generate
 and train the configs:
@@ -12,6 +12,8 @@ python run_experiments.py --exp <ID>
 More information about the available experiments and their assigned IDs, can be
 found in [experiments.py](experiments.py). The generated configs will be stored
 in `configs/generated/`.
+
+# Specific Configs and Checkpoints
 
 ## Cityscapes -> DarkZurich
 

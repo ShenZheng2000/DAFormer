@@ -1,5 +1,3 @@
-## DAFormer: Improving Network Architectures and Training Strategies for Domain-Adaptive Semantic Segmentation
-
 # Training
 
 We use a system to automatically generate

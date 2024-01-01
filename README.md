@@ -11,43 +11,47 @@ More information about the available experiments and their assigned IDs, can be
 found in [experiments.py](experiments.py). The generated configs will be stored
 in `configs/generated/`.
 
-# Specific Configs and Checkpoints
+# Checkpoints
+
+Download checkpoints from [[here](https://drive.google.com/drive/folders/1W9aMHqUbr34FB0TTaBrTGpgUMHqI9E7_?usp=drive_link)]
+
+# Specific Configs
 
 ## Cityscapes -> DarkZurich
 
-| Experiments | Id | Checkpoints |
-|----------|----------|----------|
-| DAFormer                | 80 | TODO |
-| DAFormer + Sta. Prior   | 83 | TODO |
-| DAFormer + Geo. Prior   | 84 | TODO |
-| DAFormer + Ours         | 88 | TODO |
+| Experiments | Id |
+|----------|----------|
+| DAFormer                | 80 |
+| DAFormer + Sta. Prior   | 83 |
+| DAFormer + Geo. Prior   | 84 |
+| DAFormer + Ours         | 88 |
 
 ## Cityscapes -> ACDC
 
-| Experiments | Id | Checkpoints |
-|----------|----------|----------|
-| DAFormer                | 90 | TODO |
-| DAFormer + Sta. Prior   | 93 | TODO |
-| DAFormer + Geo. Prior   | 94 | TODO |
-| DAFormer + Ours         | 98 | TODO |
+| Experiments | Id |
+|----------|----------|
+| DAFormer                | 90 |
+| DAFormer + Sta. Prior   | 93 |
+| DAFormer + Geo. Prior   | 94 |
+| DAFormer + Ours         | 98 |
 
 ## Cityscapes -> Foggy Cityscapes
 
-| Experiments | Id | Checkpoints |
-|----------|----------|----------|
-| DAFormer                | 260 | TODO |
-| DAFormer + Ours         | 268 | TODO |
+| Experiments | Id |
+|----------|----------|
+| DAFormer                | 260 |
+| DAFormer + Ours         | 268 |
 
 ## GTA -> Cityscapes
 
-| Experiments | Id | Checkpoints |
-|----------|----------|----------|
-| DAFormer                | 210 | TODO |
-| DAFormer + Ours         | 215 | TODO |
+| Experiments | Id |
+|----------|----------|
+| DAFormer                | 210 |
+| DAFormer + Ours         | 215 |
 
 ## Synthia -> Cityscapes
 
-| Experiments | Id | Checkpoints |
-|----------|----------|----------|
-| DAFormer                | 220 | TODO |
-| DAFormer + Ours         | 228 | TODO |
+| Experiments | Id |
+|----------|----------|
+| DAFormer                | 220 |
+| DAFormer + Ours         | 228 |

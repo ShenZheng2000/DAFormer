@@ -55,13 +55,3 @@ Download checkpoints from [[here](https://drive.google.com/drive/folders/1W9aMHq
 |----------|----------|
 | DAFormer                | 220 |
 | DAFormer + Ours         | 228 |
-
-# Test Set Results
-
-1. Generate test set predictions using:
-
-```
-bash test_test.sh work_dirs/$exp_name
-```
-
-2. Submit to [ACDC](https://acdc.vision.ee.ethz.ch/submit) or [DarkZurich](https://codalab.lisn.upsaclay.fr/competitions/3783#participate-submit_results) public evaluation server to obtain the scores. 

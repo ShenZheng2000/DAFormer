@@ -17,6 +17,9 @@ Download checkpoints from [[here](https://drive.google.com/drive/folders/1W9aMHq
 
 # Specific Configs
 
+<details>
+  <summary>Click Here</summary>
+
 ## Cityscapes -> DarkZurich
 
 | Experiments | Id |
@@ -55,3 +58,5 @@ Download checkpoints from [[here](https://drive.google.com/drive/folders/1W9aMHq
 |----------|----------|
 | DAFormer                | 220 |
 | DAFormer + Ours         | 228 |
+
+</details>

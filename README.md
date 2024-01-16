@@ -14,7 +14,7 @@ in `configs/generated/`.
 
 # Warping Code Locations
 
-1. Navigate to `mmseg/models/uda/dacs.py`
+Navigate to `mmseg/models/uda/dacs.py`
 
 <details>
   <summary>Init No-Warp for Target</summary>
@@ -46,7 +46,7 @@ mix_losses = self.get_model().forward_train(
 
 
 
-2. Navigate to `mmseg/models/segmentors/encoder_decoder.py`
+Navigate to `mmseg/models/segmentors/encoder_decoder.py`
 
 <details>
   <summary>Import Warping Modules</summary>

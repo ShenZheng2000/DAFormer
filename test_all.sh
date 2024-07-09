@@ -113,10 +113,10 @@
 # bash test.sh ${Base}/local-exp98/snow
 
 
-Base='/home/aghosh/Projects/2PCNet/Methods/Instance-Warp/DAFormer/work_dirs'
+# Base='/home/aghosh/Projects/2PCNet/Methods/Instance-Warp/DAFormer/work_dirs'
 
-# # 270 (NOTE: test on idd)
-bash test.sh ${Base}/local-exp270/test_12_18
+# # # 270 (NOTE: test on idd)
+# bash test.sh ${Base}/local-exp270/test_12_18
 
-# # 275  (NOTE: test on idd)
-bash test.sh ${Base}/local-exp275/test_12_18
+# # # 275  (NOTE: test on idd)
+# bash test.sh ${Base}/local-exp275/test_12_18.

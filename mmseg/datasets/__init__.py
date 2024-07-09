@@ -12,6 +12,8 @@ from .synthia import SynthiaDataset
 from .uda_dataset import UDADataset
 from .idd import IDDDataset
 from .foggy_cityscapes import FoggyCityscapesDataset
+from .gm import GMDataset
+from .roadwork import ROADWORKDataset
 
 __all__ = [
     'CustomDataset',
@@ -29,4 +31,6 @@ __all__ = [
     'DarkZurichDataset',
     'IDDDataset',
     'FoggyCityscapesDataset',
+    'GMDataset',
+    'ROADWORKDataset',
 ]

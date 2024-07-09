@@ -108,3 +108,23 @@ run_experiment() {
 # IDD2CS
 # run_experiment 0 270
 # run_experiment 1 275
+
+# NOTE: train two at a time; leave some GPUs!
+
+# NOTE: use batch size of 1 below!!!
+
+# # roadwork (train_ALL, test_REST)
+# run_experiment 3 280
+
+# # roadwork (train_PIT, test_REST)
+# run_experiment 1 290
+
+# # # roadwork (train_PIT, adapt to train_REST, test_REST)
+# run_experiment 2 300
+
+# # # roadwork (train_PIT, adapt to train_REST, test_REST; using InstWarp)
+# run_experiment 3 305
+
+# NOTE: this for debug only! => DO NOT rerun this!!!
+# roadwork (train_DEBUG, adapt to train_DEBUG, test_DEBUG)
+# run_experiment 3 310

@@ -222,8 +222,8 @@ def generate_experiment_cfgs(id):
     cfgs = []
     n_gpus = 1
     # TODO: hardcode bs as 1 for debug now!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    batch_size = 2
-    # batch_size = 1
+    # batch_size = 2
+    batch_size = 1
     iters = 40000
     opt, lr, schedule, pmult = 'adamw', 0.00006, 'poly10warm', True
     crop = '512x512'
@@ -246,6 +246,7 @@ def generate_experiment_cfgs(id):
         'cityscapes': 'cityscapes',
         'idd': 'idd',
         'foggy_cityscapes': 'foggy_cityscapes',
+        'roadwork': 'roadwork',
     }
 
     def get_warp_dataset_name(dataset_name):
@@ -321,10 +322,10 @@ def generate_experiment_cfgs(id):
                 cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/synthia_seg2det_gt.json'
             elif id == 275:
                 cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/IDD_seg2det.json'
-
+            elif id == 305:
+                cfg['model']['SEG_TO_DET'] = '/home/aghosh/Projects/2PCNet/Datasets/roadwork_seg2det_gt.json'
             else:
                 pass
-
 
         return cfg
 
@@ -352,6 +353,14 @@ def generate_experiment_cfgs(id):
             datasets = [('cityscapes', 'foggy_cityscapes')]
         elif 270 <= id <= 279:
             datasets = [('idd', 'cityscapes')]
+        elif 280 <= id <= 289:
+            datasets = [('roadwork', 'roadwork')]
+        elif 290 <= id <= 299:
+            datasets = [('roadworkPIT', 'roadworkPIT')]
+        elif 300 <= id <= 309:
+            datasets = [('roadworkPIT', 'roadworkREST')]
+        elif 310 <= id <= 319:
+            datasets = [('roadworkDEBUG', 'roadworkDEBUG')]
         else:
             datasets = [('cityscapes', 'acdc')]
 

@@ -2,7 +2,7 @@
 TEST_ROOT=$1
 CONFIG_FILE="${TEST_ROOT}/*${TEST_ROOT: -1}.json"
 CHECKPOINT_FILE="${TEST_ROOT}/best_mIoU_iter_*.pth"
-SAVE_PATH="${TEST_ROOT}/labelTrainIds"
+SAVE_PATH="${TEST_ROOT}/labelTrainIds" # NOTE: use for server submission
 
 python -m tools.test \
     ${CONFIG_FILE} \
